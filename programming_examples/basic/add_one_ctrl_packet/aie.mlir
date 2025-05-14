@@ -122,12 +122,12 @@ module {
     aie.shim_dma_allocation @out0(S2MM, 1, 0)
 
     memref.global "private" constant @blockwrite_data_0 : memref<8xi32> = dense<[2, 0, 0x40090000, 0, 0x40000000, 0, 0, 0x2000000]>
-    aiex.runtime_sequence @seq(%arg0: memref<8xi32>, %arg1: memref<8xi32>, %arg2: memref<8xi32>) {
+    aiex.runtime_sequence @seq(%arg0: memref<8xi32>, %arg1: memref<16xi32>, %arg2: memref<8xi32>) {
       %c0_i64 = arith.constant 0 : i64
       %c1_i64 = arith.constant 1 : i64
       %c2_i64 = arith.constant 2 : i64
       %c8_i64 = arith.constant 8 : i64
-
+      %c4_i64 = arith.constant 4 : i64
       // set Ctrl_Pkt_Tlast_Error_Enable=0 in Module_Clock_Control register
       // aiex.npu.maskwrite32 {address = 0x00060000 : ui32, column = 0 : i32, row = 2 : i32, value = 0 : ui32, mask = 0x8 : ui32}
 
@@ -152,7 +152,6 @@ module {
 
       aiex.npu.blockwrite(%0) {address = 0x1d000 : ui32, column = 0 : i32, row = 0 : i32} : memref<8xi32> // patch size of 8*int32
       // // write bd0
-      //aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c0_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<8xi32>
       // patch bd0 address for packet 0, push to mm2s_0_task_queue, wait
       //# aiex.npu.address_patch writes the pointer to argument 0 (input, arg_idx=0) to the respective BD0, BD1, ... address plus an offset
       //# 0x1D004  DMA_BD0_1  Base_Address_Low  <- buffer address for bd 0   : FROM https://github.com/Xilinx/mlir-aie/blob/dc4327fd26c8d1c2ab47df3a8f62a1f7a48b934c/test/npu-xrt/sync_task_complete_token_bd_chaining/aie2.py#L111
@@ -160,20 +159,19 @@ module {
       //     addr=(0x1D004 + j * 0x20), arg_idx=0, arg_plus=buffer_offset
       // )
 
+      // same affect as
+      aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c0_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
+      // aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 0 : i32}// dma0, use %arg1 with offset of 8 byte? 
+      // aiex.npu.maskwrite32 {address = 0x1d210 : ui32, column = 0 : i32, row = 0 : i32, mask = 0x00000F00 : ui32, value = 0x400 : ui32} // set the Task Compltete Token Controller id of DMA_MM2S to be 0x4, same with the control_packed defined when allocating CT_0_0
+      // aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32}  // This enables token_issue
+      //aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} //This block shimtile operation until a task-completition token is received at colum, row (CT_0_0) for MM2S from its receiver
 
-      aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 0 : i32}// dma0, use %arg1 with offset of 8 byte? 
-      
-      
-      
-      aiex.npu.maskwrite32 {address = 0x1d210 : ui32, column = 0 : i32, row = 0 : i32, mask = 0x00000F00 : ui32, value = 0x400 : ui32} // set the Task Compltete Token Controller id of DMA_MM2S to be 0x4, same with the control_packed defined when allocating CT_0_0
-      aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32}  // This enables token_issue
-      aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} //This block shimtile operation until a task-completition token is received at colum, row (CT_0_0) for MM2S from its receiver
-
-      // patch bd0 address for packet 1, push to mm2s_0_task_queue, wait
-      aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 8 : i32} // dma0, use %arg1 with offset of 8 byte?
-      aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32} // enable token issue
-      aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} // wait until CT_0_0 receive task-complete-token from receiver
-
+      //patch bd0 address for packet 1, push to mm2s_0_task_queue, wait
+      // aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 8 : i32} // dma0, use %arg1 with offset of 8 byte?
+      // aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32} // enable token issue
+      // aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} // wait until CT_0_0 receive task-complete-token from receiver
+      // offset of two, 2*4Byte(per int32) = 8 byte offeset 
+      aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c2_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
       // wait for dma output
       aiex.npu.dma_wait {symbol = @out0} // wait for S2MM, the output
 

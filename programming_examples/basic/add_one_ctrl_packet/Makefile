@@ -57,6 +57,10 @@ ${host_target}: ${srcdir}/host.cpp ${xclbin_target}
 run: ${host_target}
 	./${host_target} -x build/aie.xclbin -k MLIR_AIE -i build/insts.bin
 
+run_sudo: ${host_target}
+	$(info Running target: ${host_target})
+	sudo -E LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./${host_target} -x build/aie.xclbin -k MLIR_AIE -i build/insts.bin
+
 
 .PHONY: clean
 clean:
