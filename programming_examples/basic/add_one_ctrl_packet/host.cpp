@@ -35,7 +35,7 @@
 #include <stdio.h> /* printf */
 #include <stdlib.h> /* size_t */
 #include <unistd.h> /* pread, sysconf */
-
+//https://stackoverflow.com/questions/5748492/is-there-any-api-for-determining-the-physical-address-from-virtual-address-in-li/46247716#46247716
 typedef struct {
     uint64_t pfn : 55;
     unsigned int soft_dirty : 1;
@@ -231,6 +231,20 @@ int main(int argc, const char *argv[]) {
     std::cout << "ctrlPackets[" << i << "] = "
               << formatBinary8(ctrlPackets[i]) << std::endl;
   }
+
+
+  // Generate a control request CT_0_2 to read a reg value in Shimtile
+  stream_id  = 0x6; // path of result being returned from read
+  operation = 0x1;
+  beats = 0x3;  //number to read
+  address = 0x000001D004;
+  uint32_t read_bd_0_1 =
+        stream_id << 24 | operation << 22 | beats << 20 | address;
+  read_bd_0_1 |= (0x1 & parity(read_bd_0_1)) << 31;
+
+  std::cout << "read_bd_0_0v  " << formatBinary8(read_bd_0_1) << std::endl;
+  std::cout << std::hex << std::setw(8) << std::setfill('0') << read_bd_0_1 << std::endl;
+
   void *bufctrlIn = bo_ctrlIn.map<void *>();
 
 

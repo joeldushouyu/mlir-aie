@@ -23,6 +23,15 @@ module {
     %output_lock4 = aie.lock(%tile_0_2, 4) {init = 0 : i32, sym_name = "output_lock4"}
     %output_lock5 = aie.lock(%tile_0_2, 5) {init = 1 : i32, sym_name = "output_lock5"}
 
+    %debug_out_prod = aie.lock(%tile_0_2, 6) {init = 0: i32, sym_name = "debug_out_prod"}
+    %debug_out_con = aie.lock(%tile_0_2, 7) {init = 0: i32, sym_name = "debug_out_con"}
+    %debug_out_buf = aie.buffer(%tile_0_2){sym_name = "debug_out_buf"} : memref<1xi32>
+
+    %debug_in_prod = aie.lock(%tile_0_2, 8) {init = 1: i32, sym_name = "debug_in_prod"}
+    %debug_in_con = aie.lock(%tile_0_2, 9) {init = 0: i32, sym_name = "debug_in_con"}
+    %debug_in_buf = aie.buffer(%tile_0_2){sym_name = "debug_in_buf"} : memref<4xi32>
+
+
     %input_buffer = aie.buffer(%tile_0_2) {sym_name = "input_buffer"} : memref<8xi32>
     %output_buffer = aie.buffer(%tile_0_2) {sym_name = "output_buffer"} : memref<8xi32>
     %other_buffer = aie.buffer(%tile_0_2) {address=0x440 : i32,  sym_name = "other_buffer"} : memref<8xi32>
@@ -40,11 +49,22 @@ module {
       aie.packet_dest<%tile_0_0, DMA : 1>
     }
 
-    // aie.packet_flow(0x5) {
-    //   aie.packet_source<%tile_0_2, DMA : 1>
-    //   aie.packet_dest<%tile_0_0, TileControl : 0>
-    // }
-    aie.flow(%tile_0_0, DMA : 1, %tile_0_2, DMA : 1)
+
+    // TODO maybe more fancy later through the FIFO port on it?
+    aie.packet_flow(0x5) {
+      aie.packet_source<%tile_0_2, DMA : 1>
+      aie.packet_dest<%tile_0_0, TileControl : 0>
+    }
+
+    // TODO maybe more fancy later through the FIFO port on it?
+    aie.packet_flow(0x6) {
+      aie.packet_source<%tile_0_0, TileControl : 0>
+      aie.packet_dest<%tile_0_2, DMA : 1>
+    }
+
+
+
+    // aie.flow(%tile_0_0, DMA : 1, %tile_0_2, DMA : 1)
 
     %core_0_2 = aie.core(%tile_0_2) {
       %c0 = arith.constant 0 : index
@@ -52,6 +72,10 @@ module {
       %c3_i32 = arith.constant 3 : i32
       %c1 = arith.constant 1 : index
       %c8 = arith.constant 8 : index
+      %c2 = arith.constant 2 : index      
+      %c3 = arith.constant 3 : index        
+      %c4 = arith.constant 4 : index
+      %control_read_bd_0_0 = arith.constant 0x8671d004 : i32
       // initialize to i + 3
       scf.for %arg1 = %c0 to %c8 step %c1 {
         %arg1_i32 = arith.index_cast %arg1 : index to i32
@@ -77,6 +101,16 @@ module {
           %2 = arith.addi %1, %c1_i32 : i32
           memref.store %2, %input_buffer[%arg1] : memref<8xi32>
         }
+
+
+        //packet control instruction to write to dma
+        memref.store %control_read_bd_0_0, %debug_out_buf[%c0] : memref<1xi32>
+
+        aie.use_lock(%debug_out_con, Release, 1)
+        // waiting DMA transmission
+        aie.use_lock(%debug_in_con, AcquireGreaterEqual, 1)
+
+
         aie.use_lock(%input_lock2, AcquireGreaterEqual, 1)
         scf.for %arg1 = %c0 to %c8 step %c1 {
           // 6
@@ -95,12 +129,27 @@ module {
         }
         // write to output buffer
         aie.use_lock(%output_lock5, AcquireGreaterEqual, 1)
-        scf.for %arg1 = %c0 to %c8 step %c1 {
-            %1 = memref.load %input_buffer[%arg1] : memref<8xi32>
+        // scf.for %arg1 = %c0 to %c8 step %c1 {
+        //     %1 = memref.load %input_buffer[%arg1] : memref<8xi32>
+        //     memref.store %1, %output_buffer[%arg1] : memref<8xi32>  //output_buffer[i] = input_buffer[i]
+        //     %2 = arith.addi %1, %c1_i32 : i32
+        //     memref.store %2, %other_buffer[%arg1] : memref<8xi32> // other_buffer[i] += 1
+        // }
+
+
+        scf.for %arg1 = %c0 to %c4 step %c1 {
+            %1 = memref.load %debug_in_buf[%arg1] : memref<4xi32>
             memref.store %1, %output_buffer[%arg1] : memref<8xi32>  //output_buffer[i] = input_buffer[i]
             %2 = arith.addi %1, %c1_i32 : i32
             memref.store %2, %other_buffer[%arg1] : memref<8xi32> // other_buffer[i] += 1
         }
+
+        scf.for %arg1 = %c4 to %c8 step %c1 {
+            %1 = memref.load %input_buffer[%arg1] : memref<8xi32>
+            memref.store %1, %output_buffer[%arg1] : memref<8xi32>  //output_buffer[i] = input_buffer[i]
+            %2 = arith.addi %1, %c1_i32 : i32
+            memref.store %2, %other_buffer[%arg1] : memref<8xi32> // other_buffer[i] += 1
+        }                
         aie.use_lock(%output_lock4, Release, 1)
       }
       aie.end
@@ -114,6 +163,20 @@ module {
       aie.use_lock(%output_lock5, Release, 1)
       aie.next_bd ^bb1
     ^bb2:
+      %1 = aie.dma_start(MM2S, 1, ^bb3, ^bb4)
+    ^bb3:
+      aie.use_lock(%debug_out_con, AcquireGreaterEqual, 1) //TODO: maybe not event need aie.packet_info?
+      aie.dma_bd(%debug_out_buf : memref<1xi32>, 0, 1) {packet = #aie.packet_info<pkt_id = 5, pkt_type = 0>}
+      aie.use_lock(%debug_out_prod, Release, 1)
+      aie.next_bd ^bb3      
+    ^bb4:
+      %2 = aie.dma_start(S2MM, 1, ^bb5, ^bb6)
+    ^bb5:
+      aie.use_lock(%debug_in_prod, AcquireGreaterEqual, 1)
+      aie.dma_bd(%debug_in_buf : memref<4xi32>, 0, 4)
+      aie.use_lock(%debug_in_con, Release, 1)
+      aie.next_bd ^bb5
+    ^bb6:
       aie.end
     }
 
@@ -167,11 +230,12 @@ module {
       //aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} //This block shimtile operation until a task-completition token is received at colum, row (CT_0_0) for MM2S from its receiver
 
       //patch bd0 address for packet 1, push to mm2s_0_task_queue, wait
-      // aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 8 : i32} // dma0, use %arg1 with offset of 8 byte?
-      // aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32} // enable token issue
-      // aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} // wait until CT_0_0 receive task-complete-token from receiver
-      // offset of two, 2*4Byte(per int32) = 8 byte offeset 
-      aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c2_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
+      aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 8 : i32} // dma0, use %arg1 with offset of 8 byte?
+      aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32} // enable token issue
+      aiex.npu.sync {channel = 0 : i32, column = 0 : i32, column_num = 1 : i32, direction = 1 : i32, row = 0 : i32, row_num = 1 : i32} // wait until CT_0_0 receive task-complete-token from receiver
+      // or same as below
+      //offset of two, 2*4Byte(per int32) = 8 byte offeset 
+      //aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c2_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
       // wait for dma output
       aiex.npu.dma_wait {symbol = @out0} // wait for S2MM, the output
 
