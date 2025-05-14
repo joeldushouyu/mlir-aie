@@ -236,7 +236,7 @@ int main(int argc, const char *argv[]) {
   // Generate a control request CT_0_2 to read a reg value in Shimtile
   stream_id  = 0x6; // path of result being returned from read
   operation = 0x1;
-  beats = 0x3;  //number to read
+  beats = 0x0;  //number to read
   address = 0x000001D004;
   uint32_t read_bd_0_1 =
         stream_id << 24 | operation << 22 | beats << 20 | address;
@@ -244,6 +244,52 @@ int main(int argc, const char *argv[]) {
 
   std::cout << "read_bd_0_0v  " << formatBinary8(read_bd_0_1) << std::endl;
   std::cout << std::hex << std::setw(8) << std::setfill('0') << read_bd_0_1 << std::endl;
+
+  // Generate a control request CT_0_2 to read a reg value in Shimtile
+  stream_id  = 0x6; // path of result being returned from read
+  operation = 0x1;
+  beats = 0x0;  //number to read
+  address = 0x000001D01c;
+  uint32_t read_bd_0_7 =
+        stream_id << 24 | operation << 22 | beats << 20 | address;
+  read_bd_0_7 |= (0x1 & parity(read_bd_0_7)) << 31;
+
+  std::cout << "read_bd_0_7  " << formatBinary8(read_bd_0_7) << std::endl;
+  std::cout << std::hex << std::setw(8) << std::setfill('0') << read_bd_0_7 << std::endl;
+
+
+
+
+
+  //write 
+
+  // Generate a control request CT_0_2 to read a reg value in Shimtile
+  // Generate a control request CT_0_2 to read a reg value in Shimtile
+  stream_id  = 4; // path of result being returned from read
+  operation = 0x0; // write with no response
+  beats = 0x0;  // TODO: test if this determine number of reg to write?
+  address = 0x000001D004;
+  uint32_t  write_bd_0_1 =
+        stream_id << 24 | operation << 22 | beats << 20 | address;
+   write_bd_0_1|= (0x1 & parity(write_bd_0_1)) << 31;
+
+  std::cout << "write_bd_0_1  " <<std::endl;
+  std::cout << std::hex << std::setw(8) << std::setfill('0') << write_bd_0_1 << std::endl;
+
+  stream_id  = 4; // path of result being returned from read
+  operation = 0x0; // write with no response
+  beats = 0x0;  //number to read
+  address = 0x1d214;
+  uint32_t write_DMA_MM2S_0_TASK_QUEUE =
+        stream_id << 24 | operation << 22 | beats << 20 | address;
+  write_DMA_MM2S_0_TASK_QUEUE |= (0x1 & parity(write_DMA_MM2S_0_TASK_QUEUE)) << 31;
+
+  std::cout << "write_DMA_MM2S_0_TASK_QUEUE  " <<std::endl;
+  std::cout << std::hex << std::setw(8) << std::setfill('0') << write_DMA_MM2S_0_TASK_QUEUE << std::endl;
+
+
+
+
 
   void *bufctrlIn = bo_ctrlIn.map<void *>();
 
