@@ -236,13 +236,13 @@ int main(int argc, const char *argv[]) {
   // Generate a control request CT_0_2 to read a reg value in Shimtile
   stream_id  = 0x6; // path of result being returned from read
   operation = 0x1;
-  beats = 0x0;  //number to read
+  beats = 0x0;  //number to read : 2^0 = 1
   address = 0x000001D004;
   uint32_t read_bd_0_1 =
         stream_id << 24 | operation << 22 | beats << 20 | address;
   read_bd_0_1 |= (0x1 & parity(read_bd_0_1)) << 31;
 
-  std::cout << "read_bd_0_0v  " << formatBinary8(read_bd_0_1) << std::endl;
+  std::cout << "read_bd_0_1  " << formatBinary8(read_bd_0_1) << std::endl;
   std::cout << std::hex << std::setw(8) << std::setfill('0') << read_bd_0_1 << std::endl;
 
   // Generate a control request CT_0_2 to read a reg value in Shimtile

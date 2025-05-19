@@ -27,9 +27,9 @@ module {
     %debug_out_con = aie.lock(%tile_0_2, 7) {init = 0: i32, sym_name = "debug_out_con"}
     %debug_out_buf = aie.buffer(%tile_0_2){sym_name = "debug_out_buf"} : memref<4xi32>
 
-    %debug_in_prod = aie.lock(%tile_0_2, 8) {init = 1: i32, sym_name = "debug_in_prod"}
+    %debug_in_prod = aie.lock(%tile_0_2, 8) {init = 0: i32, sym_name = "debug_in_prod"}
     %debug_in_con = aie.lock(%tile_0_2, 9) {init = 0: i32, sym_name = "debug_in_con"}
-    %debug_in_buf = aie.buffer(%tile_0_2){sym_name = "debug_in_buf"} : memref<1xi32>
+    %debug_in_buf = aie.buffer(%tile_0_2){sym_name = "debug_in_buf"} : memref<4xi32>
 
 
     %input_buffer = aie.buffer(%tile_0_2) {sym_name = "input_buffer"} : memref<8xi32>
@@ -69,7 +69,9 @@ module {
     %core_0_2 = aie.core(%tile_0_2) {
       %c0 = arith.constant 0 : index
       %c1_i32 = arith.constant 1 : i32
+      %c2_i32 = arith.constant 2 : i32      
       %c3_i32 = arith.constant 3 : i32
+      %c8_i32 = arith.constant 8 : i32          
       %c1 = arith.constant 1 : index
       %c8 = arith.constant 8 : index
       %c2 = arith.constant 2 : index      
@@ -80,6 +82,8 @@ module {
       %control_write_bd_0_1 = arith.constant 0x8401d004 : i32 
       %c80000000 = arith.constant 0x80000000: i32
       %c77fbb008 = arith.constant 0x77fbb008: i32
+      %invalid_packet_data = arith.constant 0x80000000: i32
+      %c0_i32 = arith.constant 0 : i32
       // initialize to i + 3
       scf.for %arg1 = %c0 to %c8 step %c1 {
         %arg1_i32 = arith.index_cast %arg1 : index to i32
@@ -108,15 +112,24 @@ module {
 
 
         //packet control instruction to write to dma
-        // memref.store %control_read_bd_0_1_ret_1, %debug_out_buf[%c0] : memref<2xi32>
+        memref.store %control_read_bd_0_1_ret_1, %debug_out_buf[%c0] : memref<4xi32>
+        // Note: still have no method of indicatting invalid signal?
+        memref.store %c0_i32, %debug_out_buf[%c1] : memref<4xi32>
+        aie.use_lock(%debug_out_con, Release, 1)
+        aie.use_lock(%debug_out_prod, AcquireGreaterEqual, 1) 
 
+        // read result back, which is the virtual memory in BD_0
+        aie.use_lock(%debug_in_prod, Release, 1)
+        aie.use_lock(%debug_in_con, AcquireGreaterEqual, 1)
+        %111 = memref.load %debug_in_buf[%c0] : memref<4xi32>
+        %112 = arith.addi %111, %c8_i32 : i32  // virtual address offset to next packet_instruction, shoube be same as %c77fbb008 with RLSA turned off
 
-      memref.store %control_write_bd_0_1, %debug_out_buf[%c0] : memref<4xi32>
-      memref.store %c77fbb008, %debug_out_buf[%c1] : memref<4xi32>
-      aie.use_lock(%debug_out_con, Release, 1)
-      aie.use_lock(%debug_out_prod, AcquireGreaterEqual, 1) // need to separate into two write
-      memref.store %control_write_MM2S_queue, %debug_out_buf[%c0] : memref<4xi32>  //TODO: need twice, cannot merge into one?
-      memref.store %c80000000, %debug_out_buf[%c1] : memref<4xi32>
+        memref.store %control_write_bd_0_1, %debug_out_buf[%c0] : memref<4xi32>
+        memref.store %112, %debug_out_buf[%c1] : memref<4xi32>
+        aie.use_lock(%debug_out_con, Release, 1)
+        aie.use_lock(%debug_out_prod, AcquireGreaterEqual, 1) // need to separate into two write
+        memref.store %control_write_MM2S_queue, %debug_out_buf[%c0] : memref<4xi32>  //TODO: need twice, cannot merge into one?
+        memref.store %c80000000, %debug_out_buf[%c1] : memref<4xi32>
         aie.use_lock(%debug_out_con, Release, 1)
         // // waiting DMA transmission
         // aie.use_lock(%debug_in_con, AcquireGreaterEqual, 1)
@@ -140,12 +153,6 @@ module {
         }
         // write to output buffer
         aie.use_lock(%output_lock5, AcquireGreaterEqual, 1)
-        // scf.for %arg1 = %c0 to %c8 step %c1 {
-        //     %1 = memref.load %input_buffer[%arg1] : memref<8xi32>
-        //     memref.store %1, %output_buffer[%arg1] : memref<8xi32>  //output_buffer[i] = input_buffer[i]
-        //     %2 = arith.addi %1, %c1_i32 : i32
-        //     memref.store %2, %other_buffer[%arg1] : memref<8xi32> // other_buffer[i] += 1
-        // }
 
 
         scf.for %arg1 = %c0 to %c8 step %c1 {
@@ -167,20 +174,25 @@ module {
       aie.use_lock(%output_lock5, Release, 1)
       aie.next_bd ^bb1
     ^bb2:
-      %1 = aie.dma_start(MM2S, 1, ^bb3, ^bb4)
+      %1 = aie.dma_start(MM2S, 1, ^bb3, ^bb5)
     ^bb3:
+      aie.use_lock(%debug_out_con, AcquireGreaterEqual, 1) //TODO: maybe not event need aie.packet_info?
+      aie.dma_bd(%debug_out_buf : memref<4xi32>, 0, 1) {packet = #aie.packet_info<pkt_id = 4, pkt_type = 0>}
+      aie.use_lock(%debug_out_prod, Release, 1)
+      aie.next_bd ^bb4      
+    ^bb4:
       aie.use_lock(%debug_out_con, AcquireGreaterEqual, 1) //TODO: maybe not event need aie.packet_info?
       aie.dma_bd(%debug_out_buf : memref<4xi32>, 0, 2) {packet = #aie.packet_info<pkt_id = 4, pkt_type = 0>}
       aie.use_lock(%debug_out_prod, Release, 1)
-      aie.next_bd ^bb3      
-    ^bb4:
-      %2 = aie.dma_start(S2MM, 1, ^bb5, ^bb6)
+      aie.next_bd ^bb4      
     ^bb5:
-      aie.use_lock(%debug_in_prod, AcquireGreaterEqual, 1)
-      aie.dma_bd(%debug_in_buf : memref<1xi32>, 0, 1)
-      aie.use_lock(%debug_in_con, Release, 1)
-      aie.next_bd ^bb5
+      %2 = aie.dma_start(S2MM, 1, ^bb6, ^bb7)
     ^bb6:
+      aie.use_lock(%debug_in_prod, AcquireGreaterEqual, 1)
+      aie.dma_bd(%debug_in_buf : memref<4xi32>, 0, 1)
+      aie.use_lock(%debug_in_con, Release, 1)
+      aie.next_bd ^bb6
+    ^bb7:
       aie.end
     }
 
@@ -227,7 +239,7 @@ module {
       // )
 
       // same affect as
-      aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c0_i64] [%c1_i64, %c1_i64, %c1_i64, %c8_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
+      aiex.npu.dma_memcpy_nd(%arg1[%c0_i64, %c0_i64, %c0_i64, %c0_i64] [%c1_i64, %c1_i64, %c1_i64, %c2_i64] [%c0_i64, %c0_i64, %c0_i64, %c1_i64], packet = <pkt_id = 1, pkt_type = 1>) {id = 0: i64, issue_token = true, metadata = @ctrlin0} : memref<16xi32>
       // aiex.npu.address_patch {addr = 0x1d004 : ui32, arg_idx = 1 : i32, arg_plus = 0 : i32}// dma0, use %arg1 with offset of 8 byte? 
       // aiex.npu.maskwrite32 {address = 0x1d210 : ui32, column = 0 : i32, row = 0 : i32, mask = 0x00000F00 : ui32, value = 0x400 : ui32} // set the Task Compltete Token Controller id of DMA_MM2S to be 0x4, same with the control_packed defined when allocating CT_0_0
       // aiex.npu.write32 {address = 0x1d214 : ui32, column = 0 : i32, row = 0 : i32, value = 0x80000000 : ui32}  // This enables token_issue
