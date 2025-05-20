@@ -9,7 +9,7 @@
 //===----------------------------------------------------------------------===//
 // examples from  https://github.com/Xilinx/mlir-aie/tree/main/test/npu-xrt/add_one_ctrl_packet
 module {
-  aie.device(npu2) {
+  aie.device(npu2_1col) {
     memref.global "public" @out0 : memref<8xi32>
     memref.global "public" @ctrl0 : memref<8xi32>
     memref.global "public" @ctrlin0 : memref<8xi32>
@@ -114,7 +114,8 @@ module {
         //packet control instruction to write to dma
         memref.store %control_read_bd_0_1_ret_1, %debug_out_buf[%c0] : memref<4xi32>
         // Note: still have no method of indicatting invalid signal?
-        memref.store %c0_i32, %debug_out_buf[%c1] : memref<4xi32>
+        // IDEA: correct it by manipulate the related registers? 
+
         aie.use_lock(%debug_out_con, Release, 1)
         aie.use_lock(%debug_out_prod, AcquireGreaterEqual, 1) 
 
@@ -177,7 +178,7 @@ module {
       %1 = aie.dma_start(MM2S, 1, ^bb3, ^bb5)
     ^bb3:
       aie.use_lock(%debug_out_con, AcquireGreaterEqual, 1) //TODO: maybe not event need aie.packet_info?
-      aie.dma_bd(%debug_out_buf : memref<4xi32>, 0, 1) {packet = #aie.packet_info<pkt_id = 4, pkt_type = 0>}
+      aie.dma_bd(%debug_out_buf : memref<4xi32>, 0, 1) {packet = #aie.packet_info<pkt_id = 4, pkt_type = 0>} // the lenght is wrong, but can be correct in CT code
       aie.use_lock(%debug_out_prod, Release, 1)
       aie.next_bd ^bb4      
     ^bb4:

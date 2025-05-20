@@ -1,0 +1,1 @@
+aie-opt --aie-create-pathfinder-flows="route-circuit=false route-packet=true"   aie.mlir > debug.mlir
