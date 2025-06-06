@@ -310,7 +310,7 @@ def my_matmul(
                 trace_utils.configure_packet_tracing_aie2(
                     tiles_to_trace,
                     shim_tile,
-                    trace_size,
+                    trace_size//4,
                 )
 
             # This example uses only does 2 tile rows to prevent exhaustion of BDs.

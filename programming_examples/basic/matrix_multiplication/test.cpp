@@ -150,9 +150,9 @@ int main(int argc, const char *argv[]) {
 
   // Workaround so we declare a really small trace buffer when one is not used
   int tmp_trace_size = (trace_size > 0) ? trace_size : 1;
-  auto bo_trace = xrt::bo(device, tmp_trace_size * 4, XRT_BO_FLAGS_HOST_ONLY,
+  auto bo_trace = xrt::bo(device, tmp_trace_size , XRT_BO_FLAGS_HOST_ONLY,
                           kernel.group_id(7));
-
+  std::cout << "TRACE size is" << trace_size << std::endl;
   if (verbosity >= 1) {
     std::cout << "Writing data into buffer objects.\n";
   }
